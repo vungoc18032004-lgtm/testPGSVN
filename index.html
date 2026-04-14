@@ -1,0 +1,592 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8">
+        <meta http-equiv="X-UA-Compatible" content="IE=edge">
+        <meta name="viewport" content="initial-scale=1,user-scalable=no,maximum-scale=1,width=device-width">
+        <meta name="mobile-web-app-capable" content="yes">
+        <meta name="apple-mobile-web-app-capable" content="yes">
+        <link rel="stylesheet" href="css/leaflet.css">
+        <link rel="stylesheet" href="css/L.Control.Layers.Tree.css">
+        <link rel="stylesheet" href="css/L.Control.Locate.min.css">
+        <link rel="stylesheet" href="css/qgis2web.css">
+        <link rel="stylesheet" href="css/fontawesome-all.min.css">
+        <link rel="stylesheet" href="css/MarkerCluster.css">
+        <link rel="stylesheet" href="css/MarkerCluster.Default.css">
+        <link rel="stylesheet" href="css/leaflet.photon.css">
+        <link rel="stylesheet" href="css/leaflet-measure.css">
+        <style>
+        html, body, #map {
+            width: 100%;
+            height: 100%;
+            padding: 0;
+            margin: 0;
+        }
+        </style>
+        <title>Bản đồ thông tin PGS - PGS Việt Nam</title>
+    </head>
+    <body>
+        <div id="map">
+        </div>
+        <script src="js/qgis2web_expressions.js"></script>
+        <script src="js/leaflet.js"></script>
+        <script src="js/L.Control.Layers.Tree.min.js"></script>
+        <script src="js/L.Control.Locate.min.js"></script>
+        <script src="js/multi-style-layer.js"></script>
+        <script src="js/leaflet-svg-shape-markers.min.js"></script>
+        <script src="js/leaflet.rotatedMarker.js"></script>
+        <script src="js/leaflet.pattern.js"></script>
+        <script src="js/leaflet-hash.js"></script>
+        <script src="js/Autolinker.min.js"></script>
+        <script src="js/rbush.min.js"></script>
+        <script src="js/labelgun.min.js"></script>
+        <script src="js/labels.js"></script>
+        <script src="js/leaflet.photon.js"></script>
+        <script src="js/leaflet-measure.js"></script>
+        <script src="js/leaflet.markercluster.js"></script>
+        <script src="data/4tinh_PGS_1.js"></script>
+        <script src="data/5xa_PGS_2.js"></script>
+        <script src="data/Thongtin_PGS_3.js"></script>
+        <script>
+        var map = L.map('map', {
+            zoomControl:false, maxZoom:28, minZoom:3
+        })
+        var hash = new L.Hash(map);
+        map.attributionControl.setPrefix('<a href="https://github.com/tomchadwin/qgis2web" target="_blank">qgis2web</a> &middot; <a href="https://leafletjs.com" title="A JS library for interactive maps">Leaflet</a> &middot; <a href="https://qgis.org">QGIS</a>');
+        var autolinker = new Autolinker({truncate: {length: 30, location: 'smart'}});
+        // remove popup's row if "visible-with-data"
+        function removeEmptyRowsFromPopupContent(content, feature) {
+         var tempDiv = document.createElement('div');
+         tempDiv.innerHTML = content;
+         var rows = tempDiv.querySelectorAll('tr');
+         for (var i = 0; i < rows.length; i++) {
+             var td = rows[i].querySelector('td.visible-with-data');
+             var key = td ? td.id : '';
+             if (td && td.classList.contains('visible-with-data') && feature.properties[key] == null) {
+                 rows[i].parentNode.removeChild(rows[i]);
+             }
+         }
+         return tempDiv.innerHTML;
+        }
+        // modify popup if contains media
+        function addClassToPopupIfMedia(content, popup) {
+            var tempDiv = document.createElement('div');
+            tempDiv.innerHTML = content;
+            var imgTd = tempDiv.querySelector('td img');
+            if (imgTd) {
+                var src = imgTd.getAttribute('src');
+                if (/\.(jpg|jpeg|png|gif|bmp|webp|avif)$/i.test(src)) {
+                    popup._contentNode.classList.add('media');
+                    setTimeout(function() {
+                        popup.update();
+                    }, 10);
+                } else if (/\.(mp3|wav|ogg|aac)$/i.test(src)) {
+                    var audio = document.createElement('audio');
+                    audio.controls = true;
+                    audio.src = src;
+                    imgTd.parentNode.replaceChild(audio, imgTd);
+                    popup._contentNode.classList.add('media');
+                    setTimeout(function() {
+                        popup.setContent(tempDiv.innerHTML);
+                        popup.update();
+                    }, 10);
+                } else if (/\.(mp4|webm|ogg|mov)$/i.test(src)) {
+                    var video = document.createElement('video');
+                    video.controls = true;
+                    video.src = src;
+                    video.style.width = "400px";
+                    video.style.height = "300px";
+                    video.style.maxHeight = "60vh";
+                    video.style.maxWidth = "60vw";
+                    imgTd.parentNode.replaceChild(video, imgTd);
+                    popup._contentNode.classList.add('media');
+                    // Aggiorna il popup quando il video carica i metadati
+                    video.addEventListener('loadedmetadata', function() {
+                        popup.update();
+                    });
+                    setTimeout(function() {
+                        popup.setContent(tempDiv.innerHTML);
+                        popup.update();
+                    }, 10);
+                } else {
+                    popup._contentNode.classList.remove('media');
+                }
+            } else {
+                popup._contentNode.classList.remove('media');
+            }
+        }
+        var title = new L.Control({'position':'topright'});
+        title.onAdd = function (map) {
+            this._div = L.DomUtil.create('div', 'info');
+            this.update();
+            return this._div;
+        };
+        title.update = function () {
+            this._div.innerHTML = '<h2>Bản đồ thông tin PGS - PGS Việt Nam</h2>';
+        };
+        title.addTo(map);
+        var abstract = new L.Control({'position':'bottomleft'});
+        abstract.onAdd = function (map) {
+            this._div = L.DomUtil.create('div',
+            'leaflet-control abstract');
+            this._div.id = 'abstract'
+                this._div.setAttribute("onmouseenter", "abstract.show()");
+                this._div.setAttribute("onmouseleave", "abstract.hide()");
+                this.hide();
+                return this._div;
+            };
+            abstract.hide = function () {
+                this._div.classList.remove("abstractUncollapsed");
+                this._div.classList.add("abstract");
+                this._div.innerHTML = 'i'
+            }
+            abstract.show = function () {
+                this._div.classList.remove("abstract");
+                this._div.classList.add("abstractUncollapsed");
+                this._div.innerHTML = 'PGS là một hệ thống xác nhận chất lượng có sự tham gia của tổ chức và cá nhân liên quan trực tiếp đến quá trình sản xuất, phân phối, tiêu thụ, sử dụng sản phẩm vào các hoạt động giám sát đánh giá và đảm bảo chất lượng sản phẩm khi cung cấp cho thị trường';
+        };
+        abstract.addTo(map);
+        var zoomControl = L.control.zoom({
+            position: 'topleft'
+        }).addTo(map);
+        L.control.locate({locateOptions: {maxZoom: 19}}).addTo(map);
+        var measureControl = new L.Control.Measure({
+            position: 'topleft',
+            primaryLengthUnit: 'feet',
+            secondaryLengthUnit: 'miles',
+            primaryAreaUnit: 'sqfeet',
+            secondaryAreaUnit: 'sqmiles'
+        });
+        measureControl.addTo(map);
+        document.getElementsByClassName('leaflet-control-measure-toggle')[0].innerHTML = '';
+        document.getElementsByClassName('leaflet-control-measure-toggle')[0].className += ' fas fa-ruler';
+        var bounds_group = new L.featureGroup([]);
+        function setBounds() {
+            if (bounds_group.getLayers().length) {
+                map.fitBounds(bounds_group.getBounds());
+            }
+        }
+        map.createPane('pane_VietbandoMaps_0');
+        map.getPane('pane_VietbandoMaps_0').style.zIndex = 400;
+        var layer_VietbandoMaps_0 = L.tileLayer('http://images.vietbando.com/ImageLoader/GetImage.ashx?Ver=2016&LayerIds=VBD&Y={y}&X={x}&Level={z}', {
+            pane: 'pane_VietbandoMaps_0',
+            opacity: 1.0,
+            attribution: '',
+            minZoom: 3,
+            maxZoom: 28,
+        });
+        layer_VietbandoMaps_0;
+        map.addLayer(layer_VietbandoMaps_0);
+        function pop_4tinh_PGS_1(feature, layer) {
+            var popupContent = '<table>\
+                    <tr>\
+                        <th scope="row">ma</th>\
+                        <td>' + (feature.properties['ma'] !== null ? autolinker.link(String(feature.properties['ma']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <th scope="row">ten</th>\
+                        <td>' + (feature.properties['ten'] !== null ? autolinker.link(String(feature.properties['ten']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <th scope="row">sap_nhap</th>\
+                        <td>' + (feature.properties['sap_nhap'] !== null ? autolinker.link(String(feature.properties['sap_nhap']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <th scope="row">loai</th>\
+                        <td>' + (feature.properties['loai'] !== null ? autolinker.link(String(feature.properties['loai']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <th scope="row">cap</th>\
+                        <td>' + (feature.properties['cap'] !== null ? autolinker.link(String(feature.properties['cap']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <th scope="row">stt</th>\
+                        <td>' + (feature.properties['stt'] !== null ? autolinker.link(String(feature.properties['stt']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <th scope="row">dien_tich_</th>\
+                        <td>' + (feature.properties['dien_tich_'] !== null ? autolinker.link(String(feature.properties['dien_tich_']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <th scope="row">dan_so</th>\
+                        <td>' + (feature.properties['dan_so'] !== null ? autolinker.link(String(feature.properties['dan_so']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <th scope="row">mat_do_km2</th>\
+                        <td>' + (feature.properties['mat_do_km2'] !== null ? autolinker.link(String(feature.properties['mat_do_km2']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                </table>';
+            var content = removeEmptyRowsFromPopupContent(popupContent, feature);
+			layer.on('popupopen', function(e) {
+				addClassToPopupIfMedia(content, e.popup);
+			});
+			layer.bindPopup(content, { maxHeight: 400 });
+        }
+
+        function style_4tinh_PGS_1_0() {
+            return {
+                pane: 'pane_4tinh_PGS_1',
+                opacity: 1,
+                color: 'rgba(35,35,35,1.0)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1.0, 
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(243,142,113,0.8)',
+                interactive: true,
+            }
+        }
+        map.createPane('pane_4tinh_PGS_1');
+        map.getPane('pane_4tinh_PGS_1').style.zIndex = 401;
+        map.getPane('pane_4tinh_PGS_1').style['mix-blend-mode'] = 'normal';
+        var layer_4tinh_PGS_1 = new L.geoJson(json_4tinh_PGS_1, {
+            attribution: '',
+            interactive: true,
+            dataVar: 'json_4tinh_PGS_1',
+            layerName: 'layer_4tinh_PGS_1',
+            pane: 'pane_4tinh_PGS_1',
+            onEachFeature: pop_4tinh_PGS_1,
+            style: style_4tinh_PGS_1_0,
+        });
+        bounds_group.addLayer(layer_4tinh_PGS_1);
+        map.addLayer(layer_4tinh_PGS_1);
+        function pop_5xa_PGS_2(feature, layer) {
+            var popupContent = '<table>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['OBJECTID'] !== null ? autolinker.link(String(feature.properties['OBJECTID']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <th scope="row">tenTinh</th>\
+                        <td>' + (feature.properties['tenTinh'] !== null ? autolinker.link(String(feature.properties['tenTinh']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <th scope="row">maTinh</th>\
+                        <td>' + (feature.properties['maTinh'] !== null ? autolinker.link(String(feature.properties['maTinh']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <th scope="row">maTinh_BNV</th>\
+                        <td>' + (feature.properties['maTinh_BNV'] !== null ? autolinker.link(String(feature.properties['maTinh_BNV']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <th scope="row">tenXa</th>\
+                        <td>' + (feature.properties['tenXa'] !== null ? autolinker.link(String(feature.properties['tenXa']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <th scope="row">maXa</th>\
+                        <td>' + (feature.properties['maXa'] !== null ? autolinker.link(String(feature.properties['maXa']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <th scope="row">maXa_BNV</th>\
+                        <td>' + (feature.properties['maXa_BNV'] !== null ? autolinker.link(String(feature.properties['maXa_BNV']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <th scope="row">danSo</th>\
+                        <td class="visible-with-data" id="danSo">' + (feature.properties['danSo'] !== null ? autolinker.link(String(feature.properties['danSo']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2"><strong>dienTich</strong><br />' + (feature.properties['dienTich'] !== null ? autolinker.link(String(feature.properties['dienTich']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['nghiQuyet'] !== null ? autolinker.link(String(feature.properties['nghiQuyet']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['ghiChu'] !== null ? autolinker.link(String(feature.properties['ghiChu']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['SHAPE_Leng'] !== null ? autolinker.link(String(feature.properties['SHAPE_Leng']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['SHAPE_Area'] !== null ? autolinker.link(String(feature.properties['SHAPE_Area']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                </table>';
+            var content = removeEmptyRowsFromPopupContent(popupContent, feature);
+			layer.on('popupopen', function(e) {
+				addClassToPopupIfMedia(content, e.popup);
+			});
+			layer.bindPopup(content, { maxHeight: 400 });
+        }
+
+        function style_5xa_PGS_2_0() {
+            return {
+                pane: 'pane_5xa_PGS_2',
+                opacity: 1,
+                color: 'rgba(35,35,35,1.0)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1.0, 
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(225,193,56,1.0)',
+                interactive: true,
+            }
+        }
+        map.createPane('pane_5xa_PGS_2');
+        map.getPane('pane_5xa_PGS_2').style.zIndex = 402;
+        map.getPane('pane_5xa_PGS_2').style['mix-blend-mode'] = 'normal';
+        var layer_5xa_PGS_2 = new L.geoJson(json_5xa_PGS_2, {
+            attribution: '',
+            interactive: true,
+            dataVar: 'json_5xa_PGS_2',
+            layerName: 'layer_5xa_PGS_2',
+            pane: 'pane_5xa_PGS_2',
+            onEachFeature: pop_5xa_PGS_2,
+            style: style_5xa_PGS_2_0,
+        });
+        bounds_group.addLayer(layer_5xa_PGS_2);
+        map.addLayer(layer_5xa_PGS_2);
+        function pop_Thongtin_PGS_3(feature, layer) {
+            var popupContent = '<table>\
+                    <tr>\
+                        <th scope="row">STT</th>\
+                        <td>' + (feature.properties['STT'] !== null ? autolinker.link(String(feature.properties['STT']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <th scope="row">Vido</th>\
+                        <td class="visible-with-data" id="Vido">' + (feature.properties['Vido'] !== null ? autolinker.link(String(feature.properties['Vido']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <th scope="row">Kinhdo</th>\
+                        <td>' + (feature.properties['Kinhdo'] !== null ? autolinker.link(String(feature.properties['Kinhdo']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <th scope="row">Tên nhóm PGS</th>\
+                        <td>' + (feature.properties['Nhom'] !== null ? autolinker.link(String(feature.properties['Nhom']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <th scope="row">Địa chỉ</th>\
+                        <td>' + (feature.properties['Dia chi'] !== null ? autolinker.link(String(feature.properties['Dia chi']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <th scope="row">Liên hệ</th>\
+                        <td>' + (feature.properties['Lien he'] !== null ? autolinker.link(String(feature.properties['Lien he']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <th scope="row">Mã nhóm</th>\
+                        <td>' + (feature.properties['Ma nhom'] !== null ? autolinker.link(String(feature.properties['Ma nhom']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <th scope="row">Diện tích m2</th>\
+                        <td>' + (feature.properties['Dien tich'] !== null ? autolinker.link(String(feature.properties['Dien tich']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <th scope="row">Diện tích chuyển đổi</th>\
+                        <td>' + (feature.properties['Dien tic_1'] !== null ? autolinker.link(String(feature.properties['Dien tic_1']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <th scope="row">Số thành viên</th>\
+                        <td>' + (feature.properties['So TV'] !== null ? autolinker.link(String(feature.properties['So TV']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <th scope="row">Cánh đồng</th>\
+                        <td>' + (feature.properties['Canh dong'] !== null ? autolinker.link(String(feature.properties['Canh dong']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <th scope="row">uuid</th>\
+                        <td>' + (feature.properties['uuid'] !== null ? autolinker.link(String(feature.properties['uuid']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <th scope="row">Hinh anh</th>\
+                        <td>' + (feature.properties['Hinh anh'] !== null ? autolinker.link(String(feature.properties['Hinh anh']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <th scope="row">Người đại diện</th>\
+                        <td>' + (feature.properties['Dai dien'] !== null ? autolinker.link(String(feature.properties['Dai dien']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <th scope="row">Hình ảnh1</th>\
+                        <td>' + (feature.properties['Image1'] !== null ? '<img src="images/' + String(feature.properties['Image1']).replace(/[\\/:]/g, '_').trim().replace(/'/g, '\'').replace(/"/g, '&quot;') + '">' : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['Image2'] !== null ? '<img src="images/' + String(feature.properties['Image2']).replace(/[\\/:]/g, '_').trim().replace(/'/g, '\'').replace(/"/g, '&quot;') + '">' : '') + '</td>\
+                    </tr>\
+                </table>';
+            var content = removeEmptyRowsFromPopupContent(popupContent, feature);
+			layer.on('popupopen', function(e) {
+				addClassToPopupIfMedia(content, e.popup);
+			});
+			layer.bindPopup(content, { maxHeight: 400 });
+        }
+
+        function style_Thongtin_PGS_3_0() {
+            return {
+                pane: 'pane_Thongtin_PGS_3',
+                radius: 13.2,
+                opacity: 1,
+                color: 'rgba(184,8,8,1.0)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1.0,
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(8,227,11,1.0)',
+                interactive: true,
+            }
+        }
+        function style_Thongtin_PGS_3_1() {
+            return {
+                pane: 'pane_Thongtin_PGS_3',
+                radius: 14.4,
+                opacity: 1,
+                color: 'rgba(255,0,0,1.0)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1.0,
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(8,227,11,1.0)',
+                interactive: true,
+            }
+        }
+        map.createPane('pane_Thongtin_PGS_3');
+        map.getPane('pane_Thongtin_PGS_3').style.zIndex = 403;
+        map.getPane('pane_Thongtin_PGS_3').style['mix-blend-mode'] = 'normal';
+        var layer_Thongtin_PGS_3 = new L.geoJson.multiStyle(json_Thongtin_PGS_3, {
+            attribution: '',
+            interactive: true,
+            dataVar: 'json_Thongtin_PGS_3',
+            layerName: 'layer_Thongtin_PGS_3',
+            pane: 'pane_Thongtin_PGS_3',
+            onEachFeature: pop_Thongtin_PGS_3,
+            pointToLayers: [function (feature, latlng) {
+                var context = {
+                    feature: feature,
+                    variables: {}
+                };
+                return L.shapeMarker(latlng, style_Thongtin_PGS_3_0(feature));
+            },function (feature, latlng) {
+                var context = {
+                    feature: feature,
+                    variables: {}
+                };
+                return L.shapeMarker(latlng, style_Thongtin_PGS_3_1(feature));
+            },
+        ]});
+        var cluster_Thongtin_PGS_3 = new L.MarkerClusterGroup({showCoverageOnHover: false,
+            spiderfyDistanceMultiplier: 2});
+        cluster_Thongtin_PGS_3.addLayer(layer_Thongtin_PGS_3);
+
+        bounds_group.addLayer(layer_Thongtin_PGS_3);
+        cluster_Thongtin_PGS_3.addTo(map);
+        var overlaysTree = [
+            {label: '<img src="legend/Thongtin_PGS_3.png" /> Thong tin_PGS ', layer: cluster_Thongtin_PGS_3},
+            {label: '<img src="legend/5xa_PGS_2.png" /> 5xa_PGS', layer: layer_5xa_PGS_2},
+            {label: '<img src="legend/4tinh_PGS_1.png" /> 4tinh_PGS', layer: layer_4tinh_PGS_1},
+            {label: "Vietbando Maps", layer: layer_VietbandoMaps_0, radioGroup: 'bm' },]
+        var lay = L.control.layers.tree(null, overlaysTree,{
+            //namedToggle: true,
+            //selectorBack: false,
+            //closedSymbol: '&#8862; &#x1f5c0;',
+            //openedSymbol: '&#8863; &#x1f5c1;',
+            //collapseAll: 'Collapse all',
+            //expandAll: 'Expand all',
+            collapsed: false, 
+        });
+        lay.addTo(map);
+		document.addEventListener("DOMContentLoaded", function() {
+            // set new Layers List height which considers toggle icon
+            function newLayersListHeight() {
+                var layerScrollbarElement = document.querySelector('.leaflet-control-layers-scrollbar');
+                if (layerScrollbarElement) {
+                    var layersListElement = document.querySelector('.leaflet-control-layers-list');
+                    var originalHeight = layersListElement.style.height 
+                        || window.getComputedStyle(layersListElement).height;
+                    var newHeight = parseFloat(originalHeight) - 50;
+                    layersListElement.style.height = newHeight + 'px';
+                }
+            }
+            var isLayersListExpanded = true;
+            var controlLayersElement = document.querySelector('.leaflet-control-layers');
+            var toggleLayerControl = document.querySelector('.leaflet-control-layers-toggle');
+            // toggle Collapsed/Expanded and apply new Layers List height
+            toggleLayerControl.addEventListener('click', function() {
+                if (isLayersListExpanded) {
+                    controlLayersElement.classList.remove('leaflet-control-layers-expanded');
+                } else {
+                    controlLayersElement.classList.add('leaflet-control-layers-expanded');
+                }
+                isLayersListExpanded = !isLayersListExpanded;
+                newLayersListHeight()
+            });	
+			// apply new Layers List height if toggle layerstree
+			if (controlLayersElement) {
+				controlLayersElement.addEventListener('click', function(event) {
+					var toggleLayerHeaderPointer = event.target.closest('.leaflet-layerstree-header-pointer span');
+					if (toggleLayerHeaderPointer) {
+						newLayersListHeight();
+					}
+				});
+			}
+            // Collapsed/Expanded at Start to apply new height
+            setTimeout(function() {
+                toggleLayerControl.click();
+            }, 10);
+            setTimeout(function() {
+                toggleLayerControl.click();
+            }, 10);
+            // Collapsed touch/small screen
+            var isSmallScreen = window.innerWidth < 650;
+            if (isSmallScreen) {
+                setTimeout(function() {
+                    controlLayersElement.classList.remove('leaflet-control-layers-expanded');
+                    isLayersListExpanded = !isLayersListExpanded;
+                }, 500);
+            }  
+        });       
+        setBounds();
+        var i = 0;
+        layer_4tinh_PGS_1.eachLayer(function(layer) {
+            var context = {
+                feature: layer.feature,
+                variables: {}
+            };
+            layer.bindTooltip((layer.feature.properties['ten'] !== null?String('<div style="color: #323232; font-size: 13pt; font-weight: bold; font-family: \'Arial\', sans-serif;">' + layer.feature.properties['ten']) + '</div>':''), {permanent: true, offset: [-0, -16], className: 'css_4tinh_PGS_1'});
+            labels.push(layer);
+            totalMarkers += 1;
+              layer.added = true;
+              addLabel(layer, i);
+              i++;
+        });
+        var i = 0;
+        layer_5xa_PGS_2.eachLayer(function(layer) {
+            var context = {
+                feature: layer.feature,
+                variables: {}
+            };
+            layer.bindTooltip((layer.feature.properties['tenXa'] !== null?String('<div style="color: #323232; font-size: 13pt; font-weight: bold; font-family: \'Arial\', sans-serif;">' + layer.feature.properties['tenXa']) + '</div>':''), {permanent: true, offset: [-0, -16], className: 'css_5xa_PGS_2'});
+            labels.push(layer);
+            totalMarkers += 1;
+              layer.added = true;
+              addLabel(layer, i);
+              i++;
+        });
+        var i = 0;
+        layer_Thongtin_PGS_3.eachLayer(function(layer) {
+            var context = {
+                feature: layer.feature,
+                variables: {}
+            };
+            layer.bindTooltip((layer.feature.properties['Nhom'] !== null?String('<div style="color: #323232; font-size: 13pt; font-weight: bold; font-family: \'Arial\', sans-serif;">' + layer.feature.properties['Nhom']) + '</div>':''), {permanent: true, offset: [-0, -16], className: 'css_Thongtin_PGS_3'});
+            labels.push(layer);
+            totalMarkers += 1;
+              layer.added = true;
+              addLabel(layer, i);
+              i++;
+        });
+        resetLabels([layer_4tinh_PGS_1,layer_5xa_PGS_2,layer_Thongtin_PGS_3]);
+        map.on("zoomend", function(){
+            resetLabels([layer_4tinh_PGS_1,layer_5xa_PGS_2,layer_Thongtin_PGS_3]);
+        });
+        map.on("layeradd", function(){
+            resetLabels([layer_4tinh_PGS_1,layer_5xa_PGS_2,layer_Thongtin_PGS_3]);
+        });
+        map.on("layerremove", function(){
+            resetLabels([layer_4tinh_PGS_1,layer_5xa_PGS_2,layer_Thongtin_PGS_3]);
+        });
+        </script>        
+    </body>
+</html>
